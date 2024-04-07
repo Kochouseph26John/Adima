@@ -18,8 +18,10 @@ intents = discord.Intents(
 
 client = discord.Client(intents=intents)
 
+BOT_TOKEN = decouple.config("BOT_TOKEN")
 ROLE = 'Pathway'  # Change Role Here
 TARGET_FILE = 'data.csv'
+
 
 @client.event
 async def on_ready():
@@ -47,44 +49,78 @@ async def process_data():
     i = 1
     success_count = 0
     total_count = len(ids)
+    discord_errors = 0
+    unknown_error = 0
+    already_assigned = 0
+    unknown_member = 0
+
     for discord_id in ids:
-        print(f"\t{i})", discord_id, end=', ')
-        if member := guild.get_member(discord_id):
-            member_role = discord.utils.get(member.roles, name=ROLE)
-            print(member.name, end=', ')
-            if member_role is not None:
-                failure.append(
-                    {
+        try:
+            print(f"\t{i})", discord_id, end=', ')
+            if member := guild.get_member(discord_id):
+                member_role = discord.utils.get(member.roles, name=ROLE)
+                print(member.name, end=', ')
+                if member_role is not None:
+                    failure.append(
+                        {
+                            "id": discord_id,
+                            "name": member.name,
+                            "reason": "Role already assigned"
+                        }
+                    )
+                    already_assigned += 1
+                    print("Failure")
+                else:
+                    res = await member.add_roles(role)
+                    print("Role added", end=", ")
+                    success.append({
                         "id": discord_id,
                         "name": member.name,
-                        "reason": "Role already assigned"
-                    }
-                )
-                print("Failure")
+                        "payload": str(res)
+                    })
+                    success_count += 1
+                    print("Success")
             else:
-                res = await member.add_roles(role)
-                print("Role added", end=", ")
-                success.append({
+                failure.append({
                     "id": discord_id,
-                    "name": member.name,
-                    "payload": str(res)
+                    "name": "Unknown",
+                    "reason": "Member not found"
                 })
-                success_count += 1
-                print("Success")
-        else:
+                unknown_member += 1
+                print("Unknown, Failure")
+            i += 1
+        except discord.DiscordServerError as e:
+            print(" EXCEPTION: Discord Server Error")
             failure.append({
                 "id": discord_id,
                 "name": "Unknown",
-                "reason": "Member not found"
+                "reason": "Discord Server Error"
             })
-            print("Unknown, Failure")
-        i += 1
+            discord_errors += 1
+            continue
+        except Exception as e:
+            print(" EXCEPTION : Unknown")
+            print("EXCEPTION:", e)
+            failure.append({
+                "id": discord_id,
+                "name": "Unknown",
+                "reason": "Unknown Exception"
+            })
+            unknown_error += 1
+            continue
+
     with open("success.csv", "w") as f:
         f.write(pd.DataFrame(success).to_csv())
     with open("failure.csv", "w") as f:
         f.write(pd.DataFrame(failure).to_csv())
-    print(f"-> {success_count} / {total_count} Completed Successfully")
+
+    print()
+    print(f"-> {discord_errors} Discord Errors")
+    print(f"-> {unknown_error} Unknown Errors")
+    print(f"-> {already_assigned} Already Assigned")
+    print(f"-> {unknown_member} Unknown Member")
+    print(f"-> {success_count}/{total_count} Completed Successfully")
     print("DONE !")
 
 
-client.run(decouple.config("BOT_TOKEN"))
+client.run(BOT_TOKEN)
